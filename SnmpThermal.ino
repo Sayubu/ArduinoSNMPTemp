@@ -17,7 +17,8 @@
 
 //Thermistor
 static float pad = 9900;
-static float thermr = 10000; 
+static float thermr = 10000;
+#define thermalPins 16 
 #define muxPINA 2
 #define muxPINB 3
 #define muxPINC 4
@@ -28,11 +29,11 @@ int muxC = 0;
 
 //EtherNet
 static byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
-static byte ip[] = { 192, 168, 1, 250 };
-static byte gateway[] = { 192, 168, 1, 1 };
+static byte ip[] = { 192, 168, 0, 191 };
+static byte gateway[] = { 192, 168, 0, 1 };
 static byte subnet[] = { 255, 255, 255, 0 };
 
-//
+
 // tkmib - linux mib browser
 //
 // RFC1213-MIB OIDs
@@ -227,28 +228,22 @@ void pduReceived(){
 		} else if ( strncmp_P(oid, sysTempPrefix, locTempPrefix) == 0 ) {		//get temp
 			int32_t temp = 0; 		
 			
-			//substr after prefix value ex: 3.4
-			char oidLastTwo[4] = "";
-			strncpy(oidLastTwo, oid + locTempPrefix, 3);
+			//substr after prefix value ex: 12
+			char oidLast[4] = "";
+			strncpy(oidLast, oid + locTempPrefix, 3);
 
-			if( true ){
-				Serial.print("Last Two Segment: ");
-				Serial.print(oidLastTwo);
-				Serial.print(" oid: ");
-				Serial.println(oid);
+			if( false ){
+				Serial << "SNMP Info: " << endl;
+				Serial << "Last Segment: " << oidLast << " oid: " << oid << endl;
 			}
 
-			//split by '.'
-			int analogPin;
-			int muxPin;
-			sscanf(oidLastTwo, "%d.%d", &analogPin, &muxPin);			
-			if( true ){
-				Serial.print("Selected AnalogPin: ");
-				Serial.print(analogPin);
-				Serial.print(" Selected muxPin: ");
-				Serial.println(muxPin);
+			int selectedPin = 0;
+			sscanf(oidLast, "%d", &selectedPin);			
+			if( false ){
+				Serial << "SNMP Info: " << endl;
+				Serial << "Selected Pin: " << selectedPin << endl;
 			}
-			temp = fetchTemp(analogPin, muxPin);
+			temp = fetchTemp(selectedPin);
 
 			status = pdu.VALUE.encode(SNMP_SYNTAX_INT, temp);
 			pdu.type = SNMP_PDU_RESPONSE;
@@ -262,23 +257,27 @@ void pduReceived(){
 		}
 		Agentuino.responsePdu(&pdu);
 	}
-	  //
 	Agentuino.freePdu(&pdu);
 }
 
-int32_t fetchTemp(int analogPin, int muxCount){
+int32_t fetchTemp(int selectedPin){
 	float temp = 0;
+	int analogPin = 0;
+	int muxPin = 0;
 
-	if( analogPin<2 || analogPin>5 || muxCount > 7 ){
+	if( selectedPin < 1 || selectedPin > thermalPins ){
 		// analogPin 0, 1 used for ethernet shield SD Card Control
 		// Multiplexer only 0~7
 		return temp;
 	}
 
+	analogPin = (selectedPin-1) / 8 + 2;
+	muxPin = (selectedPin-1) % 8;
+
 	//get temp from Thermistor
-	muxA = bitRead(muxCount,0);
-	muxB = bitRead(muxCount,1);
-	muxC = bitRead(muxCount,2);
+	muxA = bitRead(muxPin,0);
+	muxB = bitRead(muxPin,1);
+	muxC = bitRead(muxPin,2);
 
 	//select mux pint
 	digitalWrite(muxPINA, muxA);
@@ -288,17 +287,10 @@ int32_t fetchTemp(int analogPin, int muxCount){
 	temp = Thermistor(analogRead(analogPin));
 
 	if( debug ){
-                unsigned long time = millis();
-                Serial.print(time);		
-                Serial.print(": analogPin ");
-		Serial.print(analogPin);
-		Serial.print(" MUX Port");
-		Serial.print(muxCount);
-		Serial.print("=> ");
-		Serial.print("Celsius: "); 
-		Serial.print(temp,2);                             // display Celsius
-		Serial.println("");
-                Serial.println("");
+		unsigned long time = millis();
+		Serial << "Func:fetchTemp Info: " << endl;
+		Serial << time << ": analogPin " << analogPin << " MUX Port " << muxPin
+			   << "=> Celsius: " << _FLOAT(temp, 2) << endl << endl;
 	}
 
 	return (int) (temp*100.0);
@@ -313,9 +305,8 @@ void setup()
 
 	Ethernet.begin(mac, ip);
 	api_status = Agentuino.begin();
-	if ( api_status == SNMP_API_STAT_SUCCESS ) {
-		
-                Agentuino.onPduReceive(pduReceived);
+	if ( api_status == SNMP_API_STAT_SUCCESS ) {		
+		Agentuino.onPduReceive(pduReceived);
 		delay(10);
 		return;
 	}
@@ -328,7 +319,7 @@ void loop()
 	if ( millis() - prevMillis > 1000 ) {
 		prevMillis += 1000;
 		locUpTime += 100;
-	}
+	}        
 }
 
 float Thermistor(int RawADC) {
@@ -342,15 +333,9 @@ float Thermistor(int RawADC) {
 
 	// BEGIN- Remove these lines for the function not to display anything
 	if( false ){
-		Serial.print("ADC: "); 
-		Serial.print(RawADC); 
-		Serial.print("/1024");                           // Print out RAW ADC Number
-		Serial.print(", pad: ");
-		Serial.print(pad/1000, 3);
-		Serial.print(" Kohms, Resistance: ");
-		Serial.print(Resistance/1000, 3);
-		Serial.print(" Kohms, ");
-                Serial.println("");
+		Serial << "Func:Thermistor Info: " << endl;
+		Serial << "ADC: " << RawADC << "/1024, pad: " << _FLOAT(pad/1000, 3) << " Kohms,"
+			   << "Resistance: " << _FLOAT(Resistance/1000, 3) << " Kohms" << endl;
 	}
 	// END- Remove these lines for the function not to display anything
 
